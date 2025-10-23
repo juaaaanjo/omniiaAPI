@@ -40,6 +40,7 @@ const userSchema = new mongoose.Schema({
     metaAds: {
       connected: { type: Boolean, default: false },
       accessToken: String,
+      accessTokenExpiresAt: Date,
       accountId: String,
       accountName: String,
       lastSync: Date,

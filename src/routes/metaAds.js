@@ -51,6 +51,34 @@ router.get('/campaigns/:campaignId/insights', protect, metaAdsController.getCamp
 router.put('/campaigns/:campaignId', protect, metaAdsController.updateCampaign);
 
 /**
+ * @route   POST /api/meta-ads/campaigns/:campaignId/pause
+ * @desc    Pause campaign with history tracking
+ * @access  Private
+ */
+router.post('/campaigns/:campaignId/pause', protect, metaAdsController.pauseCampaign);
+
+/**
+ * @route   POST /api/meta-ads/campaigns/:campaignId/activate
+ * @desc    Activate/resume campaign with history tracking
+ * @access  Private
+ */
+router.post('/campaigns/:campaignId/activate', protect, metaAdsController.activateCampaign);
+
+/**
+ * @route   POST /api/meta-ads/campaigns/:campaignId/rollback
+ * @desc    Rollback campaign to previous state
+ * @access  Private
+ */
+router.post('/campaigns/:campaignId/rollback', protect, metaAdsController.rollbackCampaign);
+
+/**
+ * @route   GET /api/meta-ads/campaigns/:campaignId/history
+ * @desc    Get campaign history
+ * @access  Private
+ */
+router.get('/campaigns/:campaignId/history', protect, metaAdsController.getCampaignHistory);
+
+/**
  * @route   POST /api/meta-ads/sync
  * @desc    Sync Meta Ads data to database
  * @access  Private

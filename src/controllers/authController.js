@@ -212,7 +212,9 @@ exports.updateIntegration = async (req, res) => {
         user.integrations.metaAds = {
           connected: true,
           accessToken: credentials.accessToken,
+          accessTokenExpiresAt: credentials.accessTokenExpiresAt || null,
           accountId: credentials.accountId,
+          accountName: credentials.accountName || user.integrations.metaAds.accountName,
           lastSync: user.integrations.metaAds.lastSync,
         };
         break;

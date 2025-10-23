@@ -64,11 +64,22 @@ class MetaAdsService {
       const response = await axios(config);
       return response.data;
     } catch (error) {
+      const responseError = error.response?.data?.error;
+
+      if (responseError?.code === 190) {
+        // Meta OAuth error (expired/invalid token)
+        const tokenError = new Error(responseError?.message || 'Meta Ads access token expired');
+        tokenError.code = 'META_ACCESS_TOKEN_EXPIRED';
+        tokenError.details = responseError;
+        logger.warn(`Meta Ads access token error: ${responseError?.message || error.message}`);
+        throw tokenError;
+      }
+
       logger.error(`Meta Ads API error: ${error.message}`);
 
       if (error.response) {
         logger.error(`Status: ${error.response.status}, Data: ${JSON.stringify(error.response.data)}`);
-        throw new Error(`Meta Ads API error: ${error.response.data.error?.message || error.message}`);
+        throw new Error(`Meta Ads API error: ${responseError?.message || error.message}`);
       }
 
       throw error;

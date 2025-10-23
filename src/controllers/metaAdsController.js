@@ -1,9 +1,98 @@
 const MetaAdsService = require('../services/metaAdsService');
 const MetaAdsData = require('../models/MetaAdsData');
 const User = require('../models/User');
+const CampaignHistory = require('../models/CampaignHistory');
 const logger = require('../utils/logger');
 const config = require('../config/env');
 const axios = require('axios');
+
+const META_TOKEN_REFRESH_BUFFER_MS = 60 * 60 * 1000; // Refresh 1 hour before expiry
+const metaOAuthUrl = `https://graph.facebook.com/${config.metaAdsApiVersion}/oauth/access_token`;
+
+/**
+ * Exchange a short-lived Meta token for a long-lived one
+ */
+const exchangeForLongLivedToken = async (token) => {
+  try {
+    const response = await axios.get(metaOAuthUrl, {
+      params: {
+        grant_type: 'fb_exchange_token',
+        client_id: config.metaAdsAppId,
+        client_secret: config.metaAdsAppSecret,
+        fb_exchange_token: token,
+      },
+    });
+
+    const { access_token: accessToken, expires_in: expiresIn } = response.data;
+
+    if (!accessToken) {
+      throw new Error('Meta did not return an access token');
+    }
+
+    const expiresAt = typeof expiresIn === 'number'
+      ? new Date(Date.now() + expiresIn * 1000)
+      : null;
+
+    return { accessToken, expiresAt };
+  } catch (error) {
+    const metaMessage = error.response?.data?.error?.message || error.message;
+    throw new Error(`Meta Ads token exchange failed: ${metaMessage}`);
+  }
+};
+
+/**
+ * Ensure the stored Meta access token is valid, refreshing when near expiry
+ */
+const ensureMetaAdsAccessToken = async (user, { forceRefresh = false } = {}) => {
+  const integration = user.integrations?.metaAds;
+
+  if (!integration?.accessToken) {
+    throw new Error('Meta Ads access token not found. Please reconnect the integration.');
+  }
+
+  const expiresAtRaw = integration.accessTokenExpiresAt;
+  const expiresAt = expiresAtRaw ? new Date(expiresAtRaw) : null;
+
+  const shouldRefresh = forceRefresh ||
+    !expiresAt ||
+    expiresAt.getTime() - Date.now() <= META_TOKEN_REFRESH_BUFFER_MS;
+
+  if (!shouldRefresh) {
+    return integration.accessToken;
+  }
+
+  try {
+    const { accessToken, expiresAt: newExpiresAt } = await exchangeForLongLivedToken(integration.accessToken);
+    integration.accessToken = accessToken;
+    integration.accessTokenExpiresAt = newExpiresAt;
+    await user.save();
+    logger.info(`Meta Ads access token refreshed for user: ${user.email}`);
+    return accessToken;
+  } catch (error) {
+    logger.error(`Meta Ads token refresh failed for user ${user.email}: ${error.message}`);
+    throw new Error('Meta Ads access token expired or invalid. Please reconnect the integration.');
+  }
+};
+
+/**
+ * Wrap Meta API calls to handle token refresh automatically
+ */
+const performMetaAdsOperation = async (user, operation) => {
+  let accessToken = await ensureMetaAdsAccessToken(user);
+  let service = new MetaAdsService(accessToken);
+
+  try {
+    return await operation(service);
+  } catch (error) {
+    if (error.code === 'META_ACCESS_TOKEN_EXPIRED') {
+      accessToken = await ensureMetaAdsAccessToken(user, { forceRefresh: true });
+      service = new MetaAdsService(accessToken);
+      return await operation(service);
+    }
+
+    throw error;
+  }
+};
 
 /**
  * Meta Ads Controller
@@ -18,7 +107,7 @@ exports.initiateOAuth = async (req, res) => {
   try {
     const redirectUri = `${req.protocol}://${req.get('host')}/api/meta-ads/oauth/callback`;
 
-    const authUrl = `https://www.facebook.com/v18.0/dialog/oauth?` +
+    const authUrl = `https://www.facebook.com/${config.metaAdsApiVersion}/dialog/oauth?` +
       `client_id=${config.metaAdsAppId}&` +
       `redirect_uri=${encodeURIComponent(redirectUri)}&` +
       `scope=ads_read,ads_management,business_management&` +
@@ -60,7 +149,7 @@ exports.handleOAuthCallback = async (req, res) => {
     // Exchange code for access token
     const redirectUri = `${req.protocol}://${req.get('host')}/api/meta-ads/oauth/callback`;
 
-    const tokenResponse = await axios.get('https://graph.facebook.com/v18.0/oauth/access_token', {
+    const tokenResponse = await axios.get(metaOAuthUrl, {
       params: {
         client_id: config.metaAdsAppId,
         client_secret: config.metaAdsAppSecret,
@@ -69,14 +158,17 @@ exports.handleOAuthCallback = async (req, res) => {
       },
     });
 
-    const { access_token } = tokenResponse.data;
+    const { access_token: shortLivedToken } = tokenResponse.data;
 
-    if (!access_token) {
+    if (!shortLivedToken) {
       throw new Error('Failed to obtain access token');
     }
 
+    // Exchange for a long-lived token (60-day token)
+    const { accessToken: longLivedToken, expiresAt } = await exchangeForLongLivedToken(shortLivedToken);
+
     // Get user's ad accounts
-    const metaAdsService = new MetaAdsService(access_token);
+    const metaAdsService = new MetaAdsService(longLivedToken);
     const adAccounts = await metaAdsService.getAdAccounts();
 
     if (adAccounts.length === 0) {
@@ -101,7 +193,8 @@ exports.handleOAuthCallback = async (req, res) => {
 
     user.integrations.metaAds = {
       connected: true,
-      accessToken: access_token,
+      accessToken: longLivedToken,
+      accessTokenExpiresAt: expiresAt,
       accountId: primaryAccount.id,
       accountName: primaryAccount.name,
       lastSync: null,
@@ -134,8 +227,10 @@ exports.getAdAccounts = async (req, res) => {
       });
     }
 
-    const metaAdsService = new MetaAdsService(user.integrations.metaAds.accessToken);
-    const accounts = await metaAdsService.getAdAccounts();
+    const accounts = await performMetaAdsOperation(
+      user,
+      (service) => service.getAdAccounts()
+    );
 
     res.json({
       success: true,
@@ -168,10 +263,12 @@ exports.getCampaigns = async (req, res) => {
       });
     }
 
-    const metaAdsService = new MetaAdsService(user.integrations.metaAds.accessToken);
-    const campaigns = await metaAdsService.getCampaigns(
-      user.integrations.metaAds.accountId,
-      req.query
+    const campaigns = await performMetaAdsOperation(
+      user,
+      (service) => service.getCampaigns(
+        user.integrations.metaAds.accountId,
+        req.query
+      )
     );
 
     res.json({
@@ -215,8 +312,10 @@ exports.getCampaignInsights = async (req, res) => {
       });
     }
 
-    const metaAdsService = new MetaAdsService(user.integrations.metaAds.accessToken);
-    const insights = await metaAdsService.getCampaignInsights(campaignId, startDate, endDate);
+    const insights = await performMetaAdsOperation(
+      user,
+      (service) => service.getCampaignInsights(campaignId, startDate, endDate)
+    );
 
     res.json({
       success: true,
@@ -258,12 +357,14 @@ exports.syncData = async (req, res) => {
       });
     }
 
-    const metaAdsService = new MetaAdsService(user.integrations.metaAds.accessToken);
-    const result = await metaAdsService.syncToDatabase(
-      req.user._id,
-      user.integrations.metaAds.accountId,
-      startDate,
-      endDate
+    const result = await performMetaAdsOperation(
+      user,
+      (service) => service.syncToDatabase(
+        req.user._id,
+        user.integrations.metaAds.accountId,
+        startDate,
+        endDate
+      )
     );
 
     // Update last sync time
@@ -440,10 +541,10 @@ exports.updateCampaign = async (req, res) => {
       });
     }
 
-    const metaAdsService = new MetaAdsService(user.integrations.metaAds.accessToken);
-
-    // Update campaign via Meta API
-    const response = await metaAdsService.updateCampaign(campaignId, updates);
+    const response = await performMetaAdsOperation(
+      user,
+      (service) => service.updateCampaign(campaignId, updates)
+    );
 
     logger.info(`Campaign ${campaignId} updated for user: ${user.email}`);
 
@@ -457,6 +558,382 @@ exports.updateCampaign = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error updating campaign',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Pause campaign with history tracking
+ * @route POST /api/meta-ads/campaigns/:campaignId/pause
+ */
+exports.pauseCampaign = async (req, res) => {
+  try {
+    const { campaignId } = req.params;
+    const { reason } = req.body;
+
+    const user = await User.findById(req.user._id);
+
+    if (!user.integrations.metaAds.connected) {
+      return res.status(400).json({
+        success: false,
+        message: 'Meta Ads not connected',
+      });
+    }
+
+    const accountId = user.integrations.metaAds.accountId;
+
+    // Get current campaign state
+    const campaigns = await performMetaAdsOperation(
+      user,
+      (service) => service.getCampaigns(accountId, {
+        filtering: JSON.stringify([{ field: 'id', operator: 'EQUAL', value: campaignId }])
+      })
+    );
+
+    if (campaigns.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Campaign not found',
+      });
+    }
+
+    const currentCampaign = campaigns[0];
+
+    // Check if already paused
+    if (currentCampaign.status === 'PAUSED') {
+      return res.status(400).json({
+        success: false,
+        message: 'Campaign is already paused',
+      });
+    }
+
+    // Store previous state
+    const previousState = {
+      status: currentCampaign.status,
+      dailyBudget: currentCampaign.daily_budget,
+      lifetimeBudget: currentCampaign.lifetime_budget,
+      objective: currentCampaign.objective,
+    };
+
+    // Pause the campaign
+    await performMetaAdsOperation(
+      user,
+      (service) => service.updateCampaign(campaignId, { status: 'PAUSED' })
+    );
+
+    // Record in history
+    const newState = {
+      ...previousState,
+      status: 'PAUSED',
+    };
+
+    await CampaignHistory.createSnapshot({
+      userId: user._id,
+      campaignId,
+      campaignName: currentCampaign.name,
+      accountId,
+      action: 'pause',
+      triggeredBy: {
+        type: 'user',
+        source: user.email,
+      },
+      previousState,
+      newState,
+      reason: reason || 'Manually paused by user',
+      metadata: {
+        ipAddress: req.ip,
+        userAgent: req.get('user-agent'),
+      },
+    });
+
+    logger.info(`Campaign ${campaignId} paused by user: ${user.email}`);
+
+    res.json({
+      success: true,
+      message: 'Campaign paused successfully',
+      data: {
+        campaignId,
+        previousStatus: previousState.status,
+        newStatus: 'PAUSED',
+      },
+    });
+  } catch (error) {
+    logger.error(`Pause campaign error: ${error.message}`);
+    res.status(500).json({
+      success: false,
+      message: 'Error pausing campaign',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Activate/Resume campaign with history tracking
+ * @route POST /api/meta-ads/campaigns/:campaignId/activate
+ */
+exports.activateCampaign = async (req, res) => {
+  try {
+    const { campaignId } = req.params;
+    const { reason } = req.body;
+
+    const user = await User.findById(req.user._id);
+
+    if (!user.integrations.metaAds.connected) {
+      return res.status(400).json({
+        success: false,
+        message: 'Meta Ads not connected',
+      });
+    }
+
+    const accountId = user.integrations.metaAds.accountId;
+
+    // Get current campaign state
+    const campaigns = await performMetaAdsOperation(
+      user,
+      (service) => service.getCampaigns(accountId, {
+        filtering: JSON.stringify([{ field: 'id', operator: 'EQUAL', value: campaignId }])
+      })
+    );
+
+    if (campaigns.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Campaign not found',
+      });
+    }
+
+    const currentCampaign = campaigns[0];
+
+    // Check if already active
+    if (currentCampaign.status === 'ACTIVE') {
+      return res.status(400).json({
+        success: false,
+        message: 'Campaign is already active',
+      });
+    }
+
+    // Store previous state
+    const previousState = {
+      status: currentCampaign.status,
+      dailyBudget: currentCampaign.daily_budget,
+      lifetimeBudget: currentCampaign.lifetime_budget,
+      objective: currentCampaign.objective,
+    };
+
+    // Activate the campaign
+    await performMetaAdsOperation(
+      user,
+      (service) => service.updateCampaign(campaignId, { status: 'ACTIVE' })
+    );
+
+    // Record in history
+    const newState = {
+      ...previousState,
+      status: 'ACTIVE',
+    };
+
+    await CampaignHistory.createSnapshot({
+      userId: user._id,
+      campaignId,
+      campaignName: currentCampaign.name,
+      accountId,
+      action: 'activate',
+      triggeredBy: {
+        type: 'user',
+        source: user.email,
+      },
+      previousState,
+      newState,
+      reason: reason || 'Manually activated by user',
+      metadata: {
+        ipAddress: req.ip,
+        userAgent: req.get('user-agent'),
+      },
+    });
+
+    logger.info(`Campaign ${campaignId} activated by user: ${user.email}`);
+
+    res.json({
+      success: true,
+      message: 'Campaign activated successfully',
+      data: {
+        campaignId,
+        previousStatus: previousState.status,
+        newStatus: 'ACTIVE',
+      },
+    });
+  } catch (error) {
+    logger.error(`Activate campaign error: ${error.message}`);
+    res.status(500).json({
+      success: false,
+      message: 'Error activating campaign',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Rollback campaign to previous state
+ * @route POST /api/meta-ads/campaigns/:campaignId/rollback
+ */
+exports.rollbackCampaign = async (req, res) => {
+  try {
+    const { campaignId } = req.params;
+    const { historyId } = req.body;
+
+    const user = await User.findById(req.user._id);
+
+    if (!user.integrations.metaAds.connected) {
+      return res.status(400).json({
+        success: false,
+        message: 'Meta Ads not connected',
+      });
+    }
+
+    // Get the history entry to rollback to
+    let historyEntry;
+    if (historyId) {
+      // Rollback to specific history entry
+      historyEntry = await CampaignHistory.findOne({
+        _id: historyId,
+        userId: user._id,
+        campaignId,
+        canRollback: true,
+        rolledBackAt: null,
+      });
+    } else {
+      // Rollback to most recent rollback-able entry
+      historyEntry = await CampaignHistory.findOne({
+        userId: user._id,
+        campaignId,
+        canRollback: true,
+        rolledBackAt: null,
+      }).sort({ executedAt: -1 });
+    }
+
+    if (!historyEntry) {
+      return res.status(404).json({
+        success: false,
+        message: 'No rollback-able history entry found',
+      });
+    }
+
+    const accountId = user.integrations.metaAds.accountId;
+    const previousState = historyEntry.previousState;
+
+    // Get current campaign state
+    const campaigns = await performMetaAdsOperation(
+      user,
+      (service) => service.getCampaigns(accountId, {
+        filtering: JSON.stringify([{ field: 'id', operator: 'EQUAL', value: campaignId }])
+      })
+    );
+
+    if (campaigns.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Campaign not found',
+      });
+    }
+
+    const currentCampaign = campaigns[0];
+
+    // Store current state before rollback
+    const currentState = {
+      status: currentCampaign.status,
+      dailyBudget: currentCampaign.daily_budget,
+      lifetimeBudget: currentCampaign.lifetime_budget,
+      objective: currentCampaign.objective,
+    };
+
+    // Rollback to previous state
+    const updates = {};
+    if (previousState.status) updates.status = previousState.status;
+    if (previousState.dailyBudget) updates.daily_budget = previousState.dailyBudget;
+    if (previousState.lifetimeBudget) updates.lifetime_budget = previousState.lifetimeBudget;
+
+    await performMetaAdsOperation(
+      user,
+      (service) => service.updateCampaign(campaignId, updates)
+    );
+
+    // Mark the original entry as rolled back
+    await historyEntry.markAsRolledBack(user.email);
+
+    // Record the rollback in history
+    await CampaignHistory.createSnapshot({
+      userId: user._id,
+      campaignId,
+      campaignName: historyEntry.campaignName,
+      accountId,
+      action: 'rollback',
+      triggeredBy: {
+        type: 'user',
+        source: user.email,
+      },
+      previousState: currentState,
+      newState: previousState,
+      reason: `Rolled back to state from ${historyEntry.executedAt.toISOString()}`,
+      metadata: {
+        ipAddress: req.ip,
+        userAgent: req.get('user-agent'),
+        rolledBackHistoryId: historyEntry._id,
+      },
+    });
+
+    logger.info(`Campaign ${campaignId} rolled back by user: ${user.email}`);
+
+    res.json({
+      success: true,
+      message: 'Campaign rolled back successfully',
+      data: {
+        campaignId,
+        rolledBackTo: historyEntry.executedAt,
+        previousState: currentState,
+        newState: previousState,
+      },
+    });
+  } catch (error) {
+    logger.error(`Rollback campaign error: ${error.message}`);
+    res.status(500).json({
+      success: false,
+      message: 'Error rolling back campaign',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Get campaign history
+ * @route GET /api/meta-ads/campaigns/:campaignId/history
+ */
+exports.getCampaignHistory = async (req, res) => {
+  try {
+    const { campaignId } = req.params;
+    const { startDate, endDate, limit = 50 } = req.query;
+
+    const user = await User.findById(req.user._id);
+
+    const history = await CampaignHistory.getCampaignTimeline(
+      user._id,
+      campaignId,
+      startDate,
+      endDate
+    );
+
+    res.json({
+      success: true,
+      data: {
+        history: history.slice(0, parseInt(limit)),
+        total: history.length,
+      },
+    });
+  } catch (error) {
+    logger.error(`Get campaign history error: ${error.message}`);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching campaign history',
       error: error.message,
     });
   }

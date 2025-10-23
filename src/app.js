@@ -4,6 +4,7 @@ const connectDB = require('./config/database');
 const config = require('./config/env');
 const logger = require('./utils/logger');
 const { apiLimiter } = require('./middleware/rateLimiter');
+const campaignMonitoringService = require('./services/campaignMonitoringService');
 
 // Import routes
 const authRoutes = require('./routes/auth');
@@ -12,6 +13,7 @@ const chatRoutes = require('./routes/chat');
 const dashboardRoutes = require('./routes/dashboard');
 const debugRoutes = require('./routes/debug');
 const metaAdsRoutes = require('./routes/metaAds');
+const guardrailsRoutes = require('./routes/guardrails');
 
 /**
  * Initialize Express app
@@ -85,6 +87,7 @@ app.use('/api/chat', chatRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/debug', debugRoutes);
 app.use('/api/meta-ads', metaAdsRoutes);
+app.use('/api/guardrails', guardrailsRoutes);
 
 /**
  * Welcome route
@@ -103,6 +106,7 @@ app.get('/', (req, res) => {
       dashboard: '/api/dashboard',
       debug: '/api/debug',
       metaAds: '/api/meta-ads',
+      guardrails: '/api/guardrails',
     },
   });
 });
@@ -140,6 +144,11 @@ const PORT = config.port;
 const server = app.listen(PORT, () => {
   logger.info(`Server running in ${config.nodeEnv} mode on port ${PORT}`);
   logger.info(`Health check available at http://localhost:${PORT}/health`);
+
+  // Start campaign monitoring service
+  // Check every 15 minutes by default (can be configured)
+  const monitoringInterval = parseInt(process.env.CAMPAIGN_MONITORING_INTERVAL) || 15;
+  campaignMonitoringService.start(monitoringInterval);
 });
 
 /**
@@ -148,6 +157,9 @@ const server = app.listen(PORT, () => {
 process.on('unhandledRejection', (err) => {
   logger.error(`Unhandled Rejection: ${err.message}`);
   logger.error(err.stack);
+
+  // Stop monitoring service
+  campaignMonitoringService.stop();
 
   // Close server & exit process
   server.close(() => {
@@ -162,6 +174,9 @@ process.on('uncaughtException', (err) => {
   logger.error(`Uncaught Exception: ${err.message}`);
   logger.error(err.stack);
 
+  // Stop monitoring service
+  campaignMonitoringService.stop();
+
   // Close server & exit process
   server.close(() => {
     process.exit(1);
@@ -173,6 +188,10 @@ process.on('uncaughtException', (err) => {
  */
 process.on('SIGTERM', () => {
   logger.info('SIGTERM signal received: closing HTTP server');
+
+  // Stop monitoring service
+  campaignMonitoringService.stop();
+
   server.close(() => {
     logger.info('HTTP server closed');
   });

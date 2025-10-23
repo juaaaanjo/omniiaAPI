@@ -39,6 +39,14 @@ const dashboardQuerySchema = Joi.object({
   granularity: Joi.string().valid('day', 'week', 'month', 'quarter', 'year').default('day'),
 });
 
+// Cross-analysis query validation (optional dates with 2-year default range)
+const crossAnalysisQuerySchema = Joi.object({
+  startDate: Joi.date().iso().optional(),
+  endDate: Joi.date().iso().optional(),
+  metrics: Joi.array().items(Joi.string()).optional(),
+  granularity: Joi.string().valid('day', 'week', 'month', 'quarter', 'year').default('day'),
+});
+
 /**
  * Generic validation middleware
  */
@@ -117,6 +125,7 @@ module.exports = {
   dateSyncSchema,
   chatQuerySchema,
   dashboardQuerySchema,
+  crossAnalysisQuerySchema,
 
   // Middleware
   validate,
