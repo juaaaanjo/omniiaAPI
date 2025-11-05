@@ -15,6 +15,14 @@ const apiLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
+  // Skip rate limiting for localhost in development
+  skip: (req) => {
+    if (config.nodeEnv === 'development') {
+      const ip = req.ip || req.connection.remoteAddress;
+      return ip === '::1' || ip === '127.0.0.1' || ip === '::ffff:127.0.0.1';
+    }
+    return false;
+  },
   handler: (req, res) => {
     logger.warn(`Rate limit exceeded for IP: ${req.ip}`);
     res.status(429).json({
@@ -36,6 +44,14 @@ const authLimiter = rateLimit({
     success: false,
     message: 'Too many authentication attempts, please try again later',
   },
+  // Skip rate limiting for localhost in development
+  skip: (req) => {
+    if (config.nodeEnv === 'development') {
+      const ip = req.ip || req.connection.remoteAddress;
+      return ip === '::1' || ip === '127.0.0.1' || ip === '::ffff:127.0.0.1';
+    }
+    return false;
+  },
   handler: (req, res) => {
     logger.warn(`Auth rate limit exceeded for IP: ${req.ip}`);
     res.status(429).json({
@@ -55,6 +71,14 @@ const chatLimiter = rateLimit({
   message: {
     success: false,
     message: 'Too many chat requests, please slow down',
+  },
+  // Skip rate limiting for localhost in development
+  skip: (req) => {
+    if (config.nodeEnv === 'development') {
+      const ip = req.ip || req.connection.remoteAddress;
+      return ip === '::1' || ip === '127.0.0.1' || ip === '::ffff:127.0.0.1';
+    }
+    return false;
   },
   handler: (req, res) => {
     logger.warn(`Chat rate limit exceeded for user: ${req.user?.id || 'anonymous'}`);
@@ -76,6 +100,14 @@ const syncLimiter = rateLimit({
     success: false,
     message: 'Sync limit reached, please try again later',
   },
+  // Skip rate limiting for localhost in development
+  skip: (req) => {
+    if (config.nodeEnv === 'development') {
+      const ip = req.ip || req.connection.remoteAddress;
+      return ip === '::1' || ip === '127.0.0.1' || ip === '::ffff:127.0.0.1';
+    }
+    return false;
+  },
   handler: (req, res) => {
     logger.warn(`Sync rate limit exceeded for user: ${req.user?.id || 'anonymous'}`);
     res.status(429).json({
@@ -96,6 +128,14 @@ const dashboardLimiter = rateLimit({
   message: {
     success: false,
     message: 'Too many dashboard requests',
+  },
+  // Skip rate limiting for localhost in development
+  skip: (req) => {
+    if (config.nodeEnv === 'development') {
+      const ip = req.ip || req.connection.remoteAddress;
+      return ip === '::1' || ip === '127.0.0.1' || ip === '::ffff:127.0.0.1';
+    }
+    return false;
   },
 });
 

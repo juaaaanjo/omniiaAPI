@@ -1,3 +1,8 @@
+if (typeof Object.hasOwn !== 'function') {
+  // Polyfill for Node.js versions before 16.9 where Object.hasOwn is unavailable
+  Object.hasOwn = (target, property) => Object.prototype.hasOwnProperty.call(target, property);
+}
+
 const express = require('express');
 const cors = require('cors');
 const connectDB = require('./config/database');
@@ -5,6 +10,9 @@ const config = require('./config/env');
 const logger = require('./utils/logger');
 const { apiLimiter } = require('./middleware/rateLimiter');
 const campaignMonitoringService = require('./services/campaignMonitoringService');
+const scheduledReportsService = require('./services/scheduledReportsService');
+const automatedPlanningService = require('./services/automatedPlanningService');
+const automatedAlertService = require('./services/automatedAlertService');
 
 // Import routes
 const authRoutes = require('./routes/auth');
@@ -14,6 +22,11 @@ const dashboardRoutes = require('./routes/dashboard');
 const debugRoutes = require('./routes/debug');
 const metaAdsRoutes = require('./routes/metaAds');
 const guardrailsRoutes = require('./routes/guardrails');
+const forecastingRoutes = require('./routes/forecasting');
+const forecastReportingRoutes = require('./routes/forecastReporting');
+const emailReportsRoutes = require('./routes/emailReports');
+const planningRoutes = require('./routes/planning');
+const eioRoutes = require('./routes/eio');
 
 /**
  * Initialize Express app
@@ -88,6 +101,11 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/debug', debugRoutes);
 app.use('/api/meta-ads', metaAdsRoutes);
 app.use('/api/guardrails', guardrailsRoutes);
+app.use('/api/forecasting', forecastingRoutes);
+app.use('/api/planning', planningRoutes);
+app.use('/api/admin/forecasts', forecastReportingRoutes);
+app.use('/api/admin/reports', emailReportsRoutes);
+app.use('/api/eio', eioRoutes);
 
 /**
  * Welcome route
@@ -107,6 +125,10 @@ app.get('/', (req, res) => {
       debug: '/api/debug',
       metaAds: '/api/meta-ads',
       guardrails: '/api/guardrails',
+      forecasting: '/api/forecasting',
+      planning: '/api/planning',
+      adminForecasts: '/api/admin/forecasts',
+      adminReports: '/api/admin/reports',
     },
   });
 });
@@ -149,6 +171,15 @@ const server = app.listen(PORT, () => {
   // Check every 15 minutes by default (can be configured)
   const monitoringInterval = parseInt(process.env.CAMPAIGN_MONITORING_INTERVAL) || 15;
   campaignMonitoringService.start(monitoringInterval);
+
+  // Start scheduled reports service
+  scheduledReportsService.start();
+
+  // Start automated planning service
+  automatedPlanningService.start();
+
+  // Start automated alert service
+  automatedAlertService.start();
 });
 
 /**
@@ -160,6 +191,15 @@ process.on('unhandledRejection', (err) => {
 
   // Stop monitoring service
   campaignMonitoringService.stop();
+
+  // Stop scheduled reports
+  scheduledReportsService.stop();
+
+  // Stop automated planning
+  automatedPlanningService.stop();
+
+  // Stop automated alerts
+  automatedAlertService.stop();
 
   // Close server & exit process
   server.close(() => {
@@ -177,6 +217,15 @@ process.on('uncaughtException', (err) => {
   // Stop monitoring service
   campaignMonitoringService.stop();
 
+  // Stop scheduled reports
+  scheduledReportsService.stop();
+
+  // Stop automated planning
+  automatedPlanningService.stop();
+
+  // Stop automated alerts
+  automatedAlertService.stop();
+
   // Close server & exit process
   server.close(() => {
     process.exit(1);
@@ -191,6 +240,15 @@ process.on('SIGTERM', () => {
 
   // Stop monitoring service
   campaignMonitoringService.stop();
+
+  // Stop scheduled reports
+  scheduledReportsService.stop();
+
+  // Stop automated planning
+  automatedPlanningService.stop();
+
+  // Stop automated alerts
+  automatedAlertService.stop();
 
   server.close(() => {
     logger.info('HTTP server closed');

@@ -36,6 +36,11 @@ const userSchema = new mongoose.Schema({
     enum: ['user', 'admin'],
     default: 'user',
   },
+  language: {
+    type: String,
+    enum: ['es', 'en'],
+    default: 'es', // Default to Spanish
+  },
   integrations: {
     metaAds: {
       connected: { type: Boolean, default: false },

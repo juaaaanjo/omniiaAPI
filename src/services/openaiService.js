@@ -1,6 +1,15 @@
-const OpenAI = require('openai');
-const config = require('../config/env');
 const logger = require('../utils/logger');
+const config = require('../config/env');
+
+let OpenAI;
+let openaiLibraryAvailable = true;
+
+try {
+  OpenAI = require('openai');
+} catch (error) {
+  openaiLibraryAvailable = false;
+  logger.warn(`OpenAI SDK not available in this environment. Falling back to dummy responses. (${error.message})`);
+}
 
 /**
  * OpenAI Service
@@ -9,13 +18,21 @@ const logger = require('../utils/logger');
 class OpenAIService {
   constructor(apiKey) {
     this.apiKey = apiKey || config.openaiApiKey;
+    this.usingMock = false;
 
-    if (!this.apiKey) {
-      logger.warn('OpenAI API key not configured');
+    if (!openaiLibraryAvailable) {
+      this.usingMock = true;
+    } else if (!this.apiKey) {
+      logger.warn('OpenAI API key not configured. Using dummy responses.');
+      this.usingMock = true;
     } else {
       this.openai = new OpenAI({
         apiKey: this.apiKey,
       });
+    }
+
+    if (this.usingMock) {
+      this.openai = null;
     }
   }
 
@@ -23,6 +40,22 @@ class OpenAIService {
    * Send a message to ChatGPT
    */
   async sendMessage(messages, systemPrompt = '', options = {}) {
+    if (!this.openai) {
+      const dummyResponse = 'AI service is running in mock mode. No live OpenAI response is available.';
+      logger.info('OpenAI mock response returned (service not configured or library unavailable).');
+      return {
+        content: dummyResponse,
+        usage: {
+          inputTokens: 0,
+          outputTokens: 0,
+          totalTokens: 0,
+        },
+        model: 'mock-openai',
+        stopReason: 'mock',
+        responseTime: 0,
+      };
+    }
+
     try {
       const startTime = Date.now();
 

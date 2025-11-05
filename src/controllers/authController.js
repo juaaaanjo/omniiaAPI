@@ -8,7 +8,7 @@ const logger = require('../utils/logger');
  */
 exports.register = async (req, res) => {
   try {
-    const { email, password, name, company } = req.validatedData;
+    const { email, password, name, company, language } = req.validatedData;
 
     // Check if user already exists
     const existingUser = await User.findOne({ email });
@@ -26,6 +26,7 @@ exports.register = async (req, res) => {
       password,
       name,
       company,
+      language: (language && ['es', 'en'].includes(language)) ? language : 'es', // Default to Spanish
     });
 
     await user.save();
@@ -152,7 +153,7 @@ exports.getProfile = async (req, res) => {
  */
 exports.updateProfile = async (req, res) => {
   try {
-    const { name, company } = req.body;
+    const { name, company, language } = req.body;
 
     const user = await User.findById(req.user._id);
 
@@ -166,6 +167,9 @@ exports.updateProfile = async (req, res) => {
     // Update fields
     if (name) user.name = name;
     if (company !== undefined) user.company = company;
+    if (language && ['es', 'en'].includes(language)) {
+      user.language = language;
+    }
 
     await user.save();
 
