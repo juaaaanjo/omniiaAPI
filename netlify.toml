@@ -1,0 +1,6 @@
+[build]
+  # Override npm install command to use --omit=dev instead of deprecated --production
+  command = "npm install --omit=dev && npm run build"
+
+[build.environment]
+  NODE_VERSION = "18"
