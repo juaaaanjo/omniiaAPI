@@ -96,4 +96,69 @@ router.get(
   dashboardController.comparePeriods
 );
 
+/**
+ * @route   GET /api/dashboard/retention
+ * @desc    Get retention metrics (Retención %, Nuevos clientes, LTV promedio)
+ * @access  Private
+ */
+router.get(
+  '/retention',
+  protect,
+  dashboardLimiter,
+  validateQuery(dashboardQuerySchema),
+  dashboardController.getRetentionMetrics
+);
+
+/**
+ * @route   GET /api/dashboard/growth
+ * @desc    Get growth metrics (Conversión %, Tiempo promeso)
+ * @access  Private
+ */
+router.get(
+  '/growth',
+  protect,
+  dashboardLimiter,
+  validateQuery(dashboardQuerySchema),
+  dashboardController.getGrowthMetrics
+);
+
+/**
+ * @route   GET /api/dashboard/data-quality
+ * @desc    Get data quality metrics (Calidad, Fuentes conectadas, Precisión)
+ * @access  Private
+ */
+router.get(
+  '/data-quality',
+  protect,
+  dashboardLimiter,
+  validateQuery(dashboardQuerySchema),
+  dashboardController.getDataQualityMetrics
+);
+
+/**
+ * @route   GET /api/dashboard/sac
+ * @desc    Get SAC (Customer Service) metrics (Casos resueltos %, Tiempo promedio de respuesta)
+ * @access  Private
+ */
+router.get(
+  '/sac',
+  protect,
+  dashboardLimiter,
+  validateQuery(dashboardQuerySchema),
+  dashboardController.getSACMetrics
+);
+
+/**
+ * @route   GET /api/dashboard/all-metrics
+ * @desc    Get all metrics at once (Retention, Growth, Data Quality, SAC)
+ * @access  Private
+ */
+router.get(
+  '/all-metrics',
+  protect,
+  dashboardLimiter,
+  validateQuery(dashboardQuerySchema),
+  dashboardController.getAllMetrics
+);
+
 module.exports = router;

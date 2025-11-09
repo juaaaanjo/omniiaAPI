@@ -25,8 +25,7 @@ exports.sendForecastReport = async (req, res) => {
       emails,
       startDate,
       endDate,
-      forecastType,
-      includeDetails = true,
+      sections = ['marketing', 'finance', 'cross-analysis', 'forecasting', 'planning'], // All by default
     } = req.body;
 
     // Validate emails
@@ -37,16 +36,16 @@ exports.sendForecastReport = async (req, res) => {
       });
     }
 
-    // Generate report data
-    const reportData = await reportGenerator.generateForecastReport({
+    // Generate comprehensive report data
+    const reportData = await reportGenerator.generateComprehensiveReport({
       startDate: startDate ? new Date(startDate) : undefined,
       endDate: endDate ? new Date(endDate) : undefined,
-      forecastType,
-      includeDetails,
+      userId: req.user._id,
+      sections,
     });
 
-    // Generate HTML
-    const reportHtml = reportGenerator.generateHtmlReport(reportData);
+    // Generate HTML with user's language
+    const reportHtml = reportGenerator.generateHtmlReport(reportData, req.user.language || 'es');
 
     // Send email
     await emailService.sendForecastReport({
@@ -55,7 +54,7 @@ exports.sendForecastReport = async (req, res) => {
       reportHtml,
     });
 
-    logger.info(`Forecast report sent to ${emails.join(', ')} by admin ${req.user.email}`);
+    logger.info(`Business report sent to ${emails.join(', ')} by ${req.user.email}`);
 
     res.json({
       success: true,
@@ -63,13 +62,14 @@ exports.sendForecastReport = async (req, res) => {
       data: {
         recipients: emails,
         reportPeriod: reportData.period,
+        sections,
       },
     });
   } catch (error) {
-    logger.error(`Send forecast report error: ${error.message}`);
+    logger.error(`Send business report error: ${error.message}`);
     res.status(500).json({
       success: false,
-      message: 'Error sending forecast report',
+      message: 'Error sending business report',
       error: error.message,
     });
   }
@@ -99,9 +99,10 @@ exports.sendWeeklyReport = async (req, res) => {
       });
     }
 
-    // Generate weekly report
-    const reportData = await reportGenerator.generateWeeklyReport();
-    const reportHtml = reportGenerator.generateHtmlReport(reportData);
+    // Generate weekly report (using first admin's ID for data)
+    const reportData = await reportGenerator.generateWeeklyReport(admins[0]?._id);
+    // Use Spanish as default for automated reports
+    const reportHtml = reportGenerator.generateHtmlReport(reportData, 'es');
 
     // Send to all admins
     await emailService.sendScheduledReport({
@@ -155,9 +156,10 @@ exports.sendMonthlyReport = async (req, res) => {
       });
     }
 
-    // Generate monthly report
-    const reportData = await reportGenerator.generateMonthlyReport();
-    const reportHtml = reportGenerator.generateHtmlReport(reportData);
+    // Generate monthly report (using first admin's ID for data)
+    const reportData = await reportGenerator.generateMonthlyReport(admins[0]?._id);
+    // Use Spanish as default for automated reports
+    const reportHtml = reportGenerator.generateHtmlReport(reportData, 'es');
 
     // Send to all admins
     await emailService.sendScheduledReport({
@@ -196,20 +198,22 @@ exports.previewReport = async (req, res) => {
     const {
       startDate,
       endDate,
-      forecastType,
-      includeDetails = true,
+      sections,
     } = req.query;
 
-    // Generate report data
-    const reportData = await reportGenerator.generateForecastReport({
+    // Parse sections if provided (comma-separated)
+    const sectionsArray = sections ? sections.split(',') : ['marketing', 'finance', 'cross-analysis', 'forecasting', 'planning'];
+
+    // Generate comprehensive report data
+    const reportData = await reportGenerator.generateComprehensiveReport({
       startDate: startDate ? new Date(startDate) : undefined,
       endDate: endDate ? new Date(endDate) : undefined,
-      forecastType,
-      includeDetails: includeDetails === 'true',
+      userId: req.user._id,
+      sections: sectionsArray,
     });
 
-    // Generate HTML
-    const reportHtml = reportGenerator.generateHtmlReport(reportData);
+    // Generate HTML with user's language
+    const reportHtml = reportGenerator.generateHtmlReport(reportData, req.user.language || 'es');
 
     // Return HTML for preview
     res.setHeader('Content-Type', 'text/html');
@@ -252,10 +256,10 @@ exports.testEmail = async (req, res) => {
     // Send test email
     await emailService.sendEmail({
       to: email,
-      subject: 'Test Email - Business Analytics Platform',
+      subject: 'Test Email - nerdee',
       html: `
         <h2>Email Test Successful!</h2>
-        <p>This is a test email from the Business Analytics Platform.</p>
+        <p>This is a test email from nerdee.</p>
         <p>Your email configuration is working correctly.</p>
         <p><strong>Sent at:</strong> ${new Date().toLocaleString()}</p>
       `,

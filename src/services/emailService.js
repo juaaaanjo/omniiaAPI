@@ -95,7 +95,7 @@ class EmailService {
       const senderEmail = process.env.EMAIL_USER || 'dummy@example.com';
 
       const mailOptions = {
-        from: `${process.env.EMAIL_FROM_NAME || 'Business Analytics'} <${senderEmail}>`,
+        from: `${process.env.EMAIL_FROM_NAME || 'nerdee'} <${senderEmail}>`,
         to: Array.isArray(to) ? to.join(', ') : to,
         subject,
         html,
@@ -271,7 +271,7 @@ class EmailService {
         ` : ''}
 
         <div class="footer">
-          <p>This is an automated report from Business Analytics Platform.</p>
+          <p>This is an automated report from nerdee.</p>
           <p>For questions or issues, contact your system administrator.</p>
         </div>
       </body>

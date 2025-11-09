@@ -85,7 +85,7 @@ app.use((req, res, next) => {
 app.get('/health', (req, res) => {
   res.json({
     success: true,
-    message: 'Business Analytics Platform API is running',
+    message: 'nerdee API is running',
     timestamp: new Date().toISOString(),
     environment: config.nodeEnv,
   });
@@ -113,7 +113,7 @@ app.use('/api/eio', eioRoutes);
 app.get('/', (req, res) => {
   res.json({
     success: true,
-    message: 'Welcome to Business Analytics Platform API',
+    message: 'Welcome to nerdee API',
     version: '1.0.0',
     documentation: '/api/docs',
     endpoints: {

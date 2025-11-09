@@ -3,6 +3,8 @@ const BusinessAnalysisAgent = require('../agents/BusinessAnalysisAgent');
 const InsightGeneratorAgent = require('../agents/InsightGeneratorAgent');
 const MetaAdsData = require('../models/MetaAdsData');
 const TransactionData = require('../models/TransactionData');
+const SupportTicket = require('../models/SupportTicket');
+const MetricsService = require('../services/metricsService');
 const logger = require('../utils/logger');
 
 const businessAnalysisAgent = new BusinessAnalysisAgent();
@@ -403,6 +405,171 @@ exports.comparePeriods = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error comparing periods',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Get Retention metrics
+ * @route GET /api/dashboard/retention
+ */
+exports.getRetentionMetrics = async (req, res) => {
+  try {
+    const { startDate, endDate } = req.validatedQuery;
+    const userId = req.user._id;
+
+    const retentionMetrics = await MetricsService.getRetentionMetrics(
+      userId,
+      new Date(startDate),
+      new Date(endDate)
+    );
+
+    res.json({
+      success: true,
+      data: {
+        ...retentionMetrics,
+        dateRange: { startDate, endDate },
+      },
+    });
+  } catch (error) {
+    logger.error(`Get retention metrics error: ${error.message}`);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching retention metrics',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Get Growth metrics
+ * @route GET /api/dashboard/growth
+ */
+exports.getGrowthMetrics = async (req, res) => {
+  try {
+    const { startDate, endDate } = req.validatedQuery;
+    const userId = req.user._id;
+
+    const growthMetrics = await MetricsService.getGrowthMetrics(
+      userId,
+      new Date(startDate),
+      new Date(endDate)
+    );
+
+    res.json({
+      success: true,
+      data: {
+        ...growthMetrics,
+        dateRange: { startDate, endDate },
+      },
+    });
+  } catch (error) {
+    logger.error(`Get growth metrics error: ${error.message}`);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching growth metrics',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Get Data Quality metrics
+ * @route GET /api/dashboard/data-quality
+ */
+exports.getDataQualityMetrics = async (req, res) => {
+  try {
+    const { startDate, endDate } = req.validatedQuery;
+    const userId = req.user._id;
+
+    const dataQualityMetrics = await MetricsService.getDataQualityMetrics(
+      userId,
+      new Date(startDate),
+      new Date(endDate)
+    );
+
+    res.json({
+      success: true,
+      data: {
+        ...dataQualityMetrics,
+        dateRange: { startDate, endDate },
+      },
+    });
+  } catch (error) {
+    logger.error(`Get data quality metrics error: ${error.message}`);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching data quality metrics',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Get SAC (Customer Service) metrics
+ * @route GET /api/dashboard/sac
+ */
+exports.getSACMetrics = async (req, res) => {
+  try {
+    const { startDate, endDate } = req.validatedQuery;
+    const userId = req.user._id;
+
+    const sacMetrics = await SupportTicket.getSACMetrics(
+      userId,
+      new Date(startDate),
+      new Date(endDate)
+    );
+
+    res.json({
+      success: true,
+      data: {
+        ...sacMetrics,
+        dateRange: { startDate, endDate },
+      },
+    });
+  } catch (error) {
+    logger.error(`Get SAC metrics error: ${error.message}`);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching SAC metrics',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Get all dashboard metrics at once
+ * @route GET /api/dashboard/all-metrics
+ */
+exports.getAllMetrics = async (req, res) => {
+  try {
+    const { startDate, endDate } = req.validatedQuery;
+    const userId = req.user._id;
+
+    const [retention, growth, dataQuality, sac] = await Promise.all([
+      MetricsService.getRetentionMetrics(userId, new Date(startDate), new Date(endDate)),
+      MetricsService.getGrowthMetrics(userId, new Date(startDate), new Date(endDate)),
+      MetricsService.getDataQualityMetrics(userId, new Date(startDate), new Date(endDate)),
+      SupportTicket.getSACMetrics(userId, new Date(startDate), new Date(endDate)),
+    ]);
+
+    res.json({
+      success: true,
+      data: {
+        retention,
+        growth,
+        dataQuality,
+        sac,
+        dateRange: { startDate, endDate },
+        generatedAt: new Date(),
+      },
+    });
+  } catch (error) {
+    logger.error(`Get all metrics error: ${error.message}`);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching all metrics',
       error: error.message,
     });
   }
