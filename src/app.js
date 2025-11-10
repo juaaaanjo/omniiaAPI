@@ -32,6 +32,8 @@ const eioRoutes = require('./routes/eio');
  * Initialize Express app
  */
 const app = express();
+// Trust first proxy (Railway/Netlify fronting Express) so rate limiter can read X-Forwarded-For
+app.set('trust proxy', 1);
 
 /**
  * Connect to MongoDB
