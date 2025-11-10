@@ -47,6 +47,11 @@ const config = {
 
   // Frontend URL (for OAuth redirects)
   frontendUrl: process.env.FRONTEND_URL || 'http://localhost:3000',
+
+  // Email / Resend
+  resendApiKey: process.env.RESEND_API_KEY,
+  emailFromAddress: process.env.EMAIL_FROM_ADDRESS,
+  emailFromName: process.env.EMAIL_FROM_NAME || 'nerdee',
 };
 
 /**

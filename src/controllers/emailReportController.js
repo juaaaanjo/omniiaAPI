@@ -299,7 +299,7 @@ exports.getEmailStatus = async (req, res) => {
           ? isDummyMode
             ? 'Email service running in dummy mode. Emails are logged but not sent.'
             : 'Email service is configured and ready'
-          : 'Email service not configured. Set EMAIL_HOST, EMAIL_USER, and EMAIL_PASSWORD in .env',
+          : 'Email service not configured. Set RESEND_API_KEY and EMAIL_FROM_ADDRESS in .env',
       },
     });
   } catch (error) {

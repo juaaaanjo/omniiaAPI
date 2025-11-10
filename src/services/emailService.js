@@ -1,14 +1,14 @@
-const nodemailer = require('nodemailer');
-const config = require('../config/env');
+const { Resend } = require('resend');
 const logger = require('../utils/logger');
 
 /**
  * Email Service
- * Handles sending emails using nodemailer
+ * Handles sending emails through Resend with a dummy fallback
  */
 class EmailService {
   constructor() {
     this.transporter = null;
+    this.resendClient = null;
     this.isDummyTransport = false;
     this.initializeTransporter();
   }
@@ -18,26 +18,19 @@ class EmailService {
    */
   initializeTransporter() {
     // Check if email is configured
-    if (!process.env.EMAIL_HOST || !process.env.EMAIL_USER || !process.env.EMAIL_PASSWORD) {
-      logger.warn('Email service not fully configured. Falling back to dummy email transport.');
+    if (!process.env.RESEND_API_KEY || !process.env.EMAIL_FROM_ADDRESS) {
+      logger.warn('Resend email service not fully configured. Falling back to dummy email transport.');
       this.setupDummyTransport();
       return;
     }
 
     try {
-      this.transporter = nodemailer.createTransport({
-        host: process.env.EMAIL_HOST,
-        port: parseInt(process.env.EMAIL_PORT || '587'),
-        secure: process.env.EMAIL_SECURE === 'true', // true for 465, false for other ports
-        auth: {
-          user: process.env.EMAIL_USER,
-          pass: process.env.EMAIL_PASSWORD,
-        },
-      });
-
-      logger.info('Email service initialized successfully');
+      this.resendClient = new Resend(process.env.RESEND_API_KEY);
+      this.isDummyTransport = false;
+      logger.info('Resend email service initialized successfully');
     } catch (error) {
       logger.error(`Email service initialization error: ${error.message}`);
+      this.setupDummyTransport();
     }
   }
 
@@ -46,6 +39,7 @@ class EmailService {
    */
   setupDummyTransport() {
     this.isDummyTransport = true;
+    this.resendClient = null;
     this.transporter = {
       sendMail: async mailOptions => {
         const recipients = Array.isArray(mailOptions.to) ? mailOptions.to : [mailOptions.to];
@@ -73,7 +67,7 @@ class EmailService {
    * Check if email service is configured
    */
   isConfigured() {
-    return this.transporter !== null;
+    return this.resendClient !== null || this.isDummyTransport;
   }
 
   /**
@@ -91,24 +85,49 @@ class EmailService {
       throw new Error('Email service not configured');
     }
 
-    try {
-      const senderEmail = process.env.EMAIL_USER || 'dummy@example.com';
+    const recipients = Array.isArray(to) ? to.filter(Boolean) : [to].filter(Boolean);
+    const fromAddress = `${process.env.EMAIL_FROM_NAME || 'nerdee'} <${process.env.EMAIL_FROM_ADDRESS || 'dummy@example.com'}>`;
 
-      const mailOptions = {
-        from: `${process.env.EMAIL_FROM_NAME || 'nerdee'} <${senderEmail}>`,
-        to: Array.isArray(to) ? to.join(', ') : to,
-        subject,
-        html,
-        text: text || this.stripHtml(html),
-        attachments,
-      };
+    if (recipients.length === 0) {
+      throw new Error('No recipients specified for email');
+    }
 
-      const info = await this.transporter.sendMail(mailOptions);
-      logger.info(`Email sent: ${info.messageId} to ${to}`);
+    const payload = {
+      from: fromAddress,
+      to: recipients,
+      subject,
+      html,
+      text: text || this.stripHtml(html),
+      attachments: attachments.length ? attachments.map(attachment => ({
+        filename: attachment.filename,
+        content: attachment.content,
+        path: attachment.path,
+        contentType: attachment.contentType,
+        contentId: attachment.contentId || attachment.cid,
+      })) : undefined,
+    };
 
+    if (this.isDummyTransport || !this.resendClient) {
+      const info = await this.transporter.sendMail(payload);
+      logger.info(`Email captured in dummy transport: ${info.messageId} to ${recipients.join(', ')}`);
       return {
         success: true,
         messageId: info.messageId,
+      };
+    }
+
+    try {
+      const { data, error } = await this.resendClient.emails.send(payload);
+
+      if (error) {
+        throw new Error(error.message || 'Unknown Resend error');
+      }
+
+      logger.info(`Email sent: ${data.id} to ${recipients.join(', ')}`);
+
+      return {
+        success: true,
+        messageId: data.id,
       };
     } catch (error) {
       logger.error(`Email send error: ${error.message}`);
@@ -283,6 +302,10 @@ class EmailService {
    * Strip HTML tags for plain text version
    */
   stripHtml(html) {
+    if (!html) {
+      return '';
+    }
+
     return html
       .replace(/<[^>]*>/g, '')
       .replace(/\s+/g, ' ')
@@ -297,8 +320,23 @@ class EmailService {
       throw new Error('Email service not configured');
     }
 
+    if (this.isDummyTransport || !this.resendClient) {
+      logger.info('Dummy email transport verify invoked');
+      return true;
+    }
+
     try {
-      await this.transporter.verify();
+      const { error } = await this.resendClient.apiKeys.list({ limit: 1 });
+
+      if (error) {
+        if (error.statusCode === 403 || error.name === 'invalid_access') {
+          logger.warn('Resend API key cannot be inspected but appears valid for sending (sending-only key).');
+          return true;
+        }
+
+        throw new Error(error.message);
+      }
+
       logger.info('Email connection test successful');
       return true;
     } catch (error) {

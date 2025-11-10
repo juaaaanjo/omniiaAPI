@@ -99,6 +99,11 @@ CLAUDE_API_KEY=your_claude_api_key
 META_ADS_ACCESS_TOKEN=your_meta_ads_token
 TRANSACTION_API_URL=https://your-transactions-endpoint
 QUICKBOOKS_CLIENT_ID=your_qb_client_id
+
+# Email (Resend)
+RESEND_API_KEY=re_your_resend_api_key
+EMAIL_FROM_ADDRESS=reports@yourdomain.com
+EMAIL_FROM_NAME=nerdee
 ```
 
 4. **Create logs directory**
