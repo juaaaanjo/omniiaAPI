@@ -31,6 +31,36 @@ const chatQuerySchema = Joi.object({
   agentType: Joi.string().valid('orchestrator', 'business-analysis', 'insight-generator').optional(),
 });
 
+// Smart register validation
+const smartRegisterAnswerSchema = Joi.object({
+  answer: Joi.string().min(2).max(4000).required(),
+});
+
+const smartRegisterFinishSchema = Joi.object({
+  email: Joi.string().email().required(),
+  password: Joi.string().min(8).max(128).required(),
+  name: Joi.string().min(2).max(100).optional(),
+});
+
+const smartRegisterFormSchema = Joi.object({
+  industry: Joi.string().max(200).required(),
+  subVertical: Joi.string().max(200).allow(null, '').optional(),
+  objective: Joi.string().max(200).required(),
+  foundationYear: Joi.number().integer().min(1800).max(new Date().getFullYear()).required(),
+  employeeCount: Joi.number().integer().min(1).max(1000000).required(),
+  businessName: Joi.string().max(200).required(),
+  taxId: Joi.string().max(100).required(),
+  country: Joi.string().max(100).required(),
+  city: Joi.string().max(100).required(),
+  timezone: Joi.string().max(100).required(),
+  currency: Joi.string().max(10).required(),
+  areasMonitored: Joi.array().items(Joi.string().max(100)).min(1).required(),
+  teams: Joi.array().items(Joi.string().max(100)).min(1).required(),
+  systems: Joi.array().items(Joi.string().max(100)).min(1).required(),
+  metrics: Joi.array().items(Joi.string().max(100)).min(1).required(),
+  alerts: Joi.array().items(Joi.string().max(100)).min(1).required(),
+});
+
 // Dashboard query validation
 const dashboardQuerySchema = Joi.object({
   startDate: Joi.date().iso().required(),
@@ -126,6 +156,9 @@ module.exports = {
   chatQuerySchema,
   dashboardQuerySchema,
   crossAnalysisQuerySchema,
+  smartRegisterAnswerSchema,
+  smartRegisterFinishSchema,
+  smartRegisterFormSchema,
 
   // Middleware
   validate,
