@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 
 /**
  * User Schema
@@ -54,6 +55,19 @@ const userSchema = new mongoose.Schema({
       connected: { type: Boolean, default: false },
       lastSync: Date,
     },
+    excelTransactions: {
+      connected: { type: Boolean, default: false },
+      lastSyncedAt: Date,
+    },
+  },
+  // Data source access control
+  enabledDataSources: {
+    type: [String],
+    default: function() {
+      // Default data sources for all users
+      return ['metaAds'];
+    },
+    enum: ['metaAds', 'transactions', 'excelTransactions'],
   },
   isActive: {
     type: Boolean,
@@ -61,6 +75,14 @@ const userSchema = new mongoose.Schema({
   },
   lastLogin: {
     type: Date,
+  },
+  resetPasswordToken: {
+    type: String,
+    select: false,
+  },
+  resetPasswordExpires: {
+    type: Date,
+    select: false,
   },
 }, {
   timestamps: true,
@@ -111,5 +133,60 @@ userSchema.methods.updateLastLogin = async function() {
   this.lastLogin = new Date();
   return this.save();
 };
+
+/**
+ * Check if user has access to a specific data source
+ */
+userSchema.methods.hasDataSourceAccess = function(dataSource) {
+  return this.enabledDataSources.includes(dataSource);
+};
+
+/**
+ * Get available data sources for this user
+ */
+userSchema.methods.getAvailableDataSources = function() {
+  return {
+    metaAds: this.enabledDataSources.includes('metaAds'),
+    transactions: this.enabledDataSources.includes('transactions'),
+    excelTransactions: this.enabledDataSources.includes('excelTransactions'),
+  };
+};
+
+/**
+ * Generate password reset token
+ */
+userSchema.methods.createPasswordResetToken = function() {
+  const resetToken = crypto.randomBytes(32).toString('hex');
+
+  this.resetPasswordToken = crypto
+    .createHash('sha256')
+    .update(resetToken)
+    .digest('hex');
+
+  this.resetPasswordExpires = Date.now() + 10 * 60 * 1000; // 10 minutes
+
+  return resetToken;
+};
+
+/**
+ * Enable a data source for domain (static method)
+ * Automatically enables data sources for users with specific email domains
+ */
+userSchema.pre('save', function(next) {
+  // Auto-enable data sources based on email domain
+  const emailDomain = this.email.split('@')[1];
+
+  // Ommeo.org accounts get access to transactions and excelTransactions
+  if (emailDomain === 'ommeo.org') {
+    if (!this.enabledDataSources.includes('transactions')) {
+      this.enabledDataSources.push('transactions');
+    }
+    if (!this.enabledDataSources.includes('excelTransactions')) {
+      this.enabledDataSources.push('excelTransactions');
+    }
+  }
+
+  next();
+});
 
 module.exports = mongoose.model('User', userSchema);
