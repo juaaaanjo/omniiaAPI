@@ -8,7 +8,7 @@ const storage = multer.memoryStorage();
 const upload = multer({
   storage,
   limits: {
-    fileSize: 10 * 1024 * 1024, // 10MB max file size
+    fileSize: 15 * 1024 * 1024, // 15MB max file size
   },
   fileFilter: (req, file, cb) => {
     // Accept only Excel files
@@ -28,11 +28,76 @@ const upload = multer({
 });
 
 /**
+ * Multer error handler middleware
+ */
+const handleMulterError = (err, req, res, next) => {
+  if (err instanceof multer.MulterError) {
+    logger.warn('Multer error', {
+      code: err.code,
+      field: err.field,
+      message: err.message,
+      userId: req.user?._id,
+    });
+
+    // Handle specific multer errors
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(400).json({
+        success: false,
+        message: 'File size exceeds the maximum allowed limit of 15MB',
+        error: {
+          code: 'FILE_TOO_LARGE',
+          maxSize: '15MB',
+        },
+      });
+    }
+
+    if (err.code === 'LIMIT_UNEXPECTED_FILE') {
+      return res.status(400).json({
+        success: false,
+        message: 'Unexpected file field',
+        error: {
+          code: 'INVALID_FIELD',
+          field: err.field,
+        },
+      });
+    }
+
+    return res.status(400).json({
+      success: false,
+      message: err.message || 'File upload error',
+      error: {
+        code: err.code,
+      },
+    });
+  }
+
+  // Handle file filter errors
+  if (err.message && err.message.includes('Only Excel files')) {
+    logger.warn('Invalid file type uploaded', {
+      userId: req.user?._id,
+      error: err.message,
+    });
+
+    return res.status(400).json({
+      success: false,
+      message: err.message,
+      error: {
+        code: 'INVALID_FILE_TYPE',
+      },
+    });
+  }
+
+  // Pass other errors to the next error handler
+  next(err);
+};
+
+/**
  * Upload and import Excel file with transaction data
  * @route POST /api/excel-transactions/upload
  */
 exports.uploadExcel = [
   upload.single('file'),
+  handleMulterError,
   async (req, res) => {
     try {
       // Check if file was uploaded
