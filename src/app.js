@@ -28,6 +28,7 @@ const emailReportsRoutes = require('./routes/emailReports');
 const planningRoutes = require('./routes/planning');
 const eioRoutes = require('./routes/eio');
 const smartRegisterRoutes = require('./routes/smartRegister');
+const excelTransactionsRoutes = require('./routes/excelTransactions');
 
 /**
  * Initialize Express app
@@ -110,6 +111,7 @@ app.use('/api/admin/forecasts', forecastReportingRoutes);
 app.use('/api/admin/reports', emailReportsRoutes);
 app.use('/api/eio', eioRoutes);
 app.use('/api/smart-register', smartRegisterRoutes);
+app.use('/api/excel-transactions', excelTransactionsRoutes);
 
 /**
  * Welcome route
