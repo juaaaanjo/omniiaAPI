@@ -18,39 +18,44 @@ class DataIntegrationAgent {
     try {
       logger.info(`${this.name}: Starting full sync for user ${user._id}`);
 
-      const results = {
-        metaAds: { success: false, message: 'Not configured' },
-        transactions: { success: false, message: 'Not configured' },
-      };
+      const results = {};
+      const availableSources = user.getAvailableDataSources();
 
-      // Sync Meta Ads
-      if (user.integrations.metaAds.connected) {
-        try {
-          const metaAdsService = new MetaAdsService(user.integrations.metaAds.accessToken);
-          results.metaAds = await metaAdsService.syncToDatabase(
-            user._id,
-            user.integrations.metaAds.accountId,
-            startDate,
-            endDate
-          );
+      // Only sync enabled data sources
+      if (availableSources.metaAds) {
+        results.metaAds = { success: false, message: 'Not configured' };
+        // Sync Meta Ads
+        if (user.integrations.metaAds.connected) {
+          try {
+            const metaAdsService = new MetaAdsService(user.integrations.metaAds.accessToken);
+            results.metaAds = await metaAdsService.syncToDatabase(
+              user._id,
+              user.integrations.metaAds.accountId,
+              startDate,
+              endDate
+            );
 
-          // Update last sync time
-          user.integrations.metaAds.lastSync = new Date();
-        } catch (error) {
-          logger.error(`Meta Ads sync error: ${error.message}`);
-          results.metaAds = { success: false, error: error.message };
+            // Update last sync time
+            user.integrations.metaAds.lastSync = new Date();
+          } catch (error) {
+            logger.error(`Meta Ads sync error: ${error.message}`);
+            results.metaAds = { success: false, error: error.message };
+          }
         }
       }
 
-      // Sync Transactions
-      if (user.integrations.transactions && user.integrations.transactions.connected) {
-        try {
-          results.transactions = await TransactionService.syncToDatabase(user._id, startDate, endDate);
+      if (availableSources.transactions) {
+        results.transactions = { success: false, message: 'Not configured' };
+        // Sync Transactions
+        if (user.integrations.transactions && user.integrations.transactions.connected) {
+          try {
+            results.transactions = await TransactionService.syncToDatabase(user._id, startDate, endDate);
 
-          user.integrations.transactions.lastSync = new Date();
-        } catch (error) {
-          logger.error(`Transactions sync error: ${error.message}`);
-          results.transactions = { success: false, error: error.message };
+            user.integrations.transactions.lastSync = new Date();
+          } catch (error) {
+            logger.error(`Transactions sync error: ${error.message}`);
+            results.transactions = { success: false, error: error.message };
+          }
         }
       }
 
@@ -81,6 +86,11 @@ class DataIntegrationAgent {
 
       switch (source) {
         case 'meta-ads':
+          // Check if user has access to this data source
+          if (!user.hasDataSourceAccess('metaAds')) {
+            result = { success: false, message: 'Access denied: Meta Ads data source not enabled for your account' };
+            break;
+          }
           if (user.integrations.metaAds.connected) {
             const metaAdsService = new MetaAdsService(user.integrations.metaAds.accessToken);
             result = await metaAdsService.syncToDatabase(
@@ -97,6 +107,11 @@ class DataIntegrationAgent {
           break;
 
         case 'transactions':
+          // Check if user has access to this data source
+          if (!user.hasDataSourceAccess('transactions')) {
+            result = { success: false, message: 'Access denied: Transactions data source not enabled for your account' };
+            break;
+          }
           if (user.integrations.transactions && user.integrations.transactions.connected) {
             result = await TransactionService.syncToDatabase(user._id, startDate, endDate);
             user.integrations.transactions.lastSync = new Date();
@@ -122,18 +137,36 @@ class DataIntegrationAgent {
    */
   async getSyncStatus(user) {
     try {
-      const status = {
-        metaAds: {
+      const status = {};
+      const availableSources = user.getAvailableDataSources();
+
+      // Only include enabled data sources
+      if (availableSources.metaAds) {
+        status.metaAds = {
           connected: user.integrations.metaAds.connected,
           lastSync: user.integrations.metaAds.lastSync,
           status: user.integrations.metaAds.connected ? 'ready' : 'not_connected',
-        },
-        transactions: {
+          enabled: true,
+        };
+      }
+
+      if (availableSources.transactions) {
+        status.transactions = {
           connected: user.integrations.transactions?.connected || false,
           lastSync: user.integrations.transactions?.lastSync || null,
           status: (user.integrations.transactions?.connected) ? 'ready' : 'not_connected',
-        },
-      };
+          enabled: true,
+        };
+      }
+
+      if (availableSources.excelTransactions) {
+        status.excelTransactions = {
+          connected: user.integrations.excelTransactions?.connected || false,
+          lastSync: user.integrations.excelTransactions?.lastSyncedAt || null,
+          status: (user.integrations.excelTransactions?.connected) ? 'ready' : 'not_connected',
+          enabled: true,
+        };
+      }
 
       return status;
     } catch (error) {
