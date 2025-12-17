@@ -14,7 +14,7 @@ const chatHistorySchema = new mongoose.Schema({
   sessionId: {
     type: String,
     required: true,
-    index: true,
+    // Note: index removed here because compound index exists below (line 91)
   },
   // Message details
   role: {
