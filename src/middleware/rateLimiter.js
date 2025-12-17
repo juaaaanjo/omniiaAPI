@@ -140,6 +140,35 @@ const dashboardLimiter = rateLimit({
 });
 
 /**
+ * Rate limiter for file uploads
+ */
+const uploadLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 20, // 20 uploads per hour
+  skipSuccessfulRequests: false,
+  message: {
+    success: false,
+    message: 'Upload limit reached, please try again later',
+  },
+  // Skip rate limiting for localhost in development
+  skip: (req) => {
+    if (config.nodeEnv === 'development') {
+      const ip = req.ip || req.connection.remoteAddress;
+      return ip === '::1' || ip === '127.0.0.1' || ip === '::ffff:127.0.0.1';
+    }
+    return false;
+  },
+  handler: (req, res) => {
+    logger.warn(`Upload rate limit exceeded for user: ${req.user?.id || 'anonymous'}`);
+    res.status(429).json({
+      success: false,
+      message: 'Too many upload requests, please wait before uploading again',
+      retryAfter: 3600,
+    });
+  },
+});
+
+/**
  * Create custom rate limiter
  */
 const createLimiter = (windowMs, max, message) => {
@@ -161,5 +190,6 @@ module.exports = {
   chatLimiter,
   syncLimiter,
   dashboardLimiter,
+  uploadLimiter,
   createLimiter,
 };
