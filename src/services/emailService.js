@@ -25,6 +25,30 @@ class EmailService {
     }
 
     try {
+      // Check if Headers API is available (required by Resend)
+      if (typeof Headers === 'undefined') {
+        // Polyfill Headers for older Node.js versions
+        global.Headers = class Headers {
+          constructor(init) {
+            this.headers = new Map();
+            if (init) {
+              Object.entries(init).forEach(([key, value]) => {
+                this.headers.set(key.toLowerCase(), value);
+              });
+            }
+          }
+          get(name) { return this.headers.get(name.toLowerCase()); }
+          set(name, value) { this.headers.set(name.toLowerCase(), value); }
+          has(name) { return this.headers.has(name.toLowerCase()); }
+          delete(name) { this.headers.delete(name.toLowerCase()); }
+          append(name, value) {
+            const existing = this.get(name);
+            this.set(name, existing ? `${existing}, ${value}` : value);
+          }
+          forEach(callback) { this.headers.forEach((value, key) => callback(value, key)); }
+        };
+      }
+
       this.resendClient = new Resend(process.env.RESEND_API_KEY);
       this.isDummyTransport = false;
       logger.info('Resend email service initialized successfully');
