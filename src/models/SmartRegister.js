@@ -15,7 +15,7 @@ const smartRegisterSchema = new mongoose.Schema({
   sessionId: {
     type: String,
     required: true,
-    index: true,
+    // Note: index removed here because unique index exists below (line 48)
   },
   status: {
     type: String,
