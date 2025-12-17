@@ -73,4 +73,48 @@ router.delete(
   authController.disconnectIntegration
 );
 
+/**
+ * @route   GET /api/auth/data-sources
+ * @desc    Get available data sources for current user
+ * @access  Private
+ */
+router.get(
+  '/data-sources',
+  protect,
+  authController.getAvailableDataSources
+);
+
+/**
+ * @route   PUT /api/auth/admin/users/:userId/data-sources
+ * @desc    Update user data sources (admin only)
+ * @access  Private (Admin only)
+ */
+router.put(
+  '/admin/users/:userId/data-sources',
+  protect,
+  authController.updateUserDataSources
+);
+
+/**
+ * @route   POST /api/auth/forgot-password
+ * @desc    Send password reset email
+ * @access  Public
+ */
+router.post(
+  '/forgot-password',
+  authLimiter,
+  authController.forgotPassword
+);
+
+/**
+ * @route   POST /api/auth/reset-password
+ * @desc    Reset password with token
+ * @access  Public
+ */
+router.post(
+  '/reset-password',
+  authLimiter,
+  authController.resetPassword
+);
+
 module.exports = router;
