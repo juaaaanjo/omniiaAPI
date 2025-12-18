@@ -125,28 +125,52 @@ exports.uploadExcel = [
         userId
       );
 
-      // Update user integration status
-      await User.findByIdAndUpdate(userId, {
-        'integrations.excelTransactions.connected': true,
-        'integrations.excelTransactions.lastSyncedAt': new Date(),
+      logger.info('Excel import completed', {
+        uploadId: result.uploadId,
+        fileName: result.fileName,
+        totalRows: result.totalRows,
+        imported: result.imported,
+        updated: result.updated,
+        errors: result.errors,
       });
 
-      res.json({
-        success: result.success,
-        message: result.success
-          ? 'Excel file imported successfully'
-          : 'Excel file imported with errors',
-        data: result,
+      // Update user integration status (don't wait for this)
+      User.findByIdAndUpdate(userId, {
+        'integrations.excelTransactions.connected': true,
+        'integrations.excelTransactions.lastSyncedAt': new Date(),
+      }).catch(err => {
+        logger.error('Failed to update user integration status', {
+          userId,
+          error: err.message,
+        });
+      });
+
+      // Send response immediately
+      return res.status(200).json({
+        success: true,
+        message: result.errors > 0
+          ? `File uploaded with ${result.errors} error(s)`
+          : 'File uploaded successfully',
+        data: {
+          uploadId: result.uploadId,
+          fileName: result.fileName,
+          totalRows: result.totalRows,
+          imported: result.imported,
+          updated: result.updated,
+          errors: result.errors,
+          errorDetails: result.errorDetails || [],
+        },
       });
 
     } catch (error) {
       logger.error('Upload Excel error', {
         error: error.message,
+        stack: error.stack,
         userId: req.user?._id,
         fileName: req.file?.originalname,
       });
 
-      res.status(500).json({
+      return res.status(500).json({
         success: false,
         message: 'Error processing Excel file',
         error: error.message,
