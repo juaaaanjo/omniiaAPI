@@ -477,7 +477,7 @@ class ExcelTransactionService {
   async getUserUploads(userId) {
     try {
       const uploads = await ExcelTransactionData.aggregate([
-        { $match: { userId: new require('mongoose').Types.ObjectId(userId) } },
+        { $match: { userId: userId } },
         {
           $group: {
             _id: '$uploadId',
@@ -485,10 +485,8 @@ class ExcelTransactionService {
             uploadedAt: { $first: '$uploadedAt' },
             transactionCount: { $sum: 1 },
             totalRevenue: { $sum: '$total' },
-            dateRange: {
-              min: { $min: '$fechaCreacion' },
-              max: { $max: '$fechaCreacion' },
-            },
+            minDate: { $min: '$fechaCreacion' },
+            maxDate: { $max: '$fechaCreacion' },
           },
         },
         { $sort: { uploadedAt: -1 } },
@@ -500,7 +498,10 @@ class ExcelTransactionService {
             uploadedAt: 1,
             transactionCount: 1,
             totalRevenue: 1,
-            dateRange: 1,
+            dateRange: {
+              min: '$minDate',
+              max: '$maxDate',
+            },
           },
         },
       ]);
